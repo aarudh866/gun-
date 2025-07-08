@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Multiplayer Gun Game</title>
+  <style>
+    body { margin: 0; background: #111; }
+    canvas { display: block; margin: auto; background: #222; border: 2px solid #555; }
+  </style>
+</head>
+<body>
+  <canvas id="gameCanvas" width="800" height="500"></canvas>
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+    const socket = io();
+
+    let myId = null;
+    let players = {};
+    let bullets = [];
+
+    let keys = {};
+
+    document.addEventListener("keydown", (e) => keys[e.key] = true);
+    document.addEventListener("keyup", (e) => keys[e.key] = false);
+
+    function sendInput() {
+      const p = players[myId];
+      if (!p) return;
+      if (keys['w']) p.y -= 3;
+      if (keys['s']) p.y += 3;
+      if (keys['a']) p.x -= 3;
+      if (keys['d']) p.x += 3;
+      p.x = Math.max(10, Math.min(canvas.width - 10, p.x));
+      p.y = Math.max(10, Math.min(canvas.height - 10, p.y));
+      socket.emit('move', { x: p.x, y: p.y });
+      if (keys[' ']) shoot();
+    }
+
+    function shoot() {
+      const p = players[myId];
+      if (!p) return;
+      socket.emit('shoot', {
+        x: p.x,
+        y: p.y,
+        vx: p.team === 'red' ? 6 : -6,
+        team: p.team
+      });
+      keys[' '] = false; // prevent continuous shooting
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      for (let id in players) {
+        const p = players[id];
+        ctx.fillStyle = p.team;
+        ctx.fillRect(p.x - 10, p.y - 10, 20, 20);
+
+        ctx.fillStyle = 'white';
+        ctx.font = '12px Arial';
+        ctx.fillText(`${p.team.toUpperCase()} HP: ${p.health}`, p.x - 20, p.y - 15);
+      }
+
+      for (let b of bullets) {
+        ctx.fillStyle = b.team;
+        ctx.fillRect(b.x, b.y, 5, 5);
+      }
+    }
+
+    function gameLoop() {
+      sendInput();
+      draw();
+      requestAnimationFrame(gameLoop);
+    }
+
+    socket.on('init', (data) => {
+      myId = data.id;
+      players = data.players;
+      bullets = data.bullets;
+    });
+
+    socket.on('newPlayer', (player) => {
+      players[player.id] = player;
+    });
+
+    socket.on('playerLeft', (id) => {
+      delete players[id];
+    });
+
+    socket.on('gameState', (data) => {
+      players = data.players;
+      bullets = data.bullets;
+    });
+
+    gameLoop();
+  </script>
+</body>
+</html>
